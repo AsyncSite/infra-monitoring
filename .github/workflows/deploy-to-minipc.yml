@@ -1,6 +1,6 @@
-# .github/workflows/deploy-to-minipc.yml
+# .github/workflows/deploy-to-minipc.yml 수정안
 
-name: Deploy to Mini PC
+name: Deploy ELK Stack to Mini PC
 
 on:
   push:
@@ -15,18 +15,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Copy files to Mini PC via scp
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.MINI_PC_HOST }}
-          username: ${{ secrets.MINI_PC_USER }}
-          key: ${{ secrets.MINI_PC_SSH_KEY }}
-          port: 2222 # <-- 이 라인이 누락되었습니다.
-          source: "./*"
-          target: "~/elk-stack"
-          rm: true
-
-      - name: Execute docker-compose on Mini PC
+      - name: Deploy to Mini PC via SSH
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.MINI_PC_HOST }}
@@ -34,6 +23,80 @@ jobs:
           key: ${{ secrets.MINI_PC_SSH_KEY }}
           port: 2222
           script: |
-            cd ~/elk-stack
+            # 1. 배포 디렉토리로 이동
+            cd ~/elk-stack || mkdir -p ~/elk-stack && cd ~/elk-stack
+
+            # 2. docker-compose.yml 파일 생성
+            # (수정된 docker-compose.yml 내용을 여기에 cat 명령어로 작성)
+            cat > docker-compose.yml << 'EOF'
+            version: '3.8'
+
+            services:
+              elasticsearch:
+                image: docker.elastic.co/elasticsearch/elasticsearch:8.14.1
+                container_name: elasticsearch
+                environment:
+                  - discovery.type=single-node
+                  - xpack.security.enabled=false
+                  - "ES_JAVA_OPTS=-Xms1g -Xmx1g"
+                volumes:
+                  - esdata:/usr/share/elasticsearch/data
+                ports:
+                  - "9200:9200"
+                networks:
+                  - asyncsite-network
+
+              logstash:
+                image: docker.elastic.co/logstash/logstash:8.14.1
+                container_name: logstash
+                volumes:
+                  - ./logstash/pipeline:/usr/share/logstash/pipeline/
+                ports:
+                  - "5044:5044"
+                networks:
+                  - asyncsite-network
+                depends_on:
+                  - elasticsearch
+
+              kibana:
+                image: docker.elastic.co/kibana/kibana:8.14.1
+                container_name: kibana
+                environment:
+                  - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+                ports:
+                  - "5601:5601"
+                networks:
+                  - asyncsite-network
+                depends_on:
+                  - elasticsearch
+
+            volumes:
+              esdata:
+                driver: local
+
+            networks:
+              asyncsite-network:
+                external: true
+            EOF
+
+            # 3. Logstash 설정 파일 복사 (이것만 scp로 보내거나, 여기서 생성)
+            # 예시: 여기서 생성하는 경우
+            mkdir -p ./logstash/pipeline
+            cat > ./logstash/pipeline/logstash.conf << 'EOF'
+            input {
+              beats {
+                port => 5044
+              }
+            }
+            output {
+              elasticsearch {
+                hosts => [ "http://elasticsearch:9200" ]
+                index => "%{[@metadata][beat]}-%{[@metadata][version]}-%{+YYYY.MM.dd}"
+              }
+            }
+            EOF
+            
+            # 4. 최신 이미지 pull 및 재시작
+            docker compose pull
             docker compose down
-            docker compose up --build -d
+            docker compose up -d
