@@ -35,6 +35,7 @@ jobs:
           host: ${{ secrets.MINI_PC_HOST }}
           username: ${{ secrets.MINI_PC_USER }}
           key: ${{ secrets.MINI_PC_SSH_KEY }}
+          port: 2222
           script: |
             cd ~/elk-stack
             docker-compose down
