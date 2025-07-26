@@ -35,5 +35,5 @@ jobs:
           port: 2222
           script: |
             cd ~/elk-stack
-            docker-compose down
-            docker-compose up --build -d
+            docker compose down
+            docker compose up --build -d
