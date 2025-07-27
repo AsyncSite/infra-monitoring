@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - feature/common/server-docker-log-collection
 
 jobs:
   deploy:
@@ -77,9 +78,9 @@ jobs:
                   - asyncsite-network
                 volumes:
                   - ./filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
-                  - /var/log/containers:/var/log/host_logs:ro
-                  - /var/run/docker.sock:/var/run/docker.sock:ro
                   - /var/lib/docker/containers:/var/lib/docker/containers:ro
+                  - /var/run/docker.sock:/var/run/docker.sock:ro
+                  - /var/log/filebeat:/var/log/filebeat
                 depends_on:
                   - logstash
 
@@ -100,6 +101,54 @@ jobs:
                 port => 5044
               }
             }
+
+            filter {
+              # JSON 로그 파싱
+              json {
+                source => "message"
+                target => "log"
+                skip_on_invalid_json => true
+              }
+              
+              # 파싱된 필드를 최상위로 이동
+              if [log] {
+                mutate {
+                  add_field => {
+                    "service" => "%{[log][service]}"
+                    "level" => "%{[log][level]}"
+                    "logger" => "%{[log][logger_name]}"
+                    "thread" => "%{[log][thread_name]}"
+                    "correlation_id" => "%{[log][corrId]}"
+                    "environment" => "%{[log][environment]}"
+                  }
+                  remove_field => [ "[log][@version]" ]
+                }
+                
+                # 로그 레벨을 태그로 추가
+                if [log][level] == "ERROR" {
+                  mutate {
+                    add_tag => [ "error" ]
+                  }
+                }
+                if [log][level] == "WARN" {
+                  mutate {
+                    add_tag => [ "warning" ]
+                  }
+                }
+                
+                # timestamp 파싱
+                date {
+                  match => [ "[log][@timestamp]", "ISO8601" ]
+                  target => "@timestamp"
+                }
+                
+                # 원본 message 필드를 파싱된 메시지로 교체
+                mutate {
+                  replace => { "message" => "%{[log][message]}" }
+                }
+              }
+            }
+
             output {
               elasticsearch {
                 hosts => [ "http://elasticsearch:9200" ]
@@ -108,19 +157,57 @@ jobs:
             }
             EOF
             
-            # 4. Filebeat 설정 파일 생성
+            # 4. Filebeat 설정 파일 생성 (서버용 - Docker 컨테이너 로그 직접 수집)
             cat > ./filebeat.yml << 'EOF'
             filebeat.inputs:
-            - type: log
-              enabled: true
-              paths:
-                - /var/log/host_logs/*/*.log
+              - type: container
+                enabled: true
+                paths:
+                  - '/var/lib/docker/containers/*/*.log'
+                
+                # Docker 컨테이너 메타데이터 추가
+                processors:
+                  - add_docker_metadata:
+                      host: "unix:///var/run/docker.sock"
+                  
+                  # JSON 로그 디코딩 (애플리케이션이 JSON 형식으로 로그 출력하는 경우)
+                  - decode_json_fields:
+                      fields: ["message"]
+                      target: ""
+                      overwrite_keys: true
+                      add_error_key: true
 
+            # 추가 프로세서 - 모든 입력에 적용
             processors:
-              - add_docker_metadata: ~
+              - add_host_metadata:
+                  when.not.contains.tags: forwarded
+              
+              # 특정 컨테이너만 필터링 (선택사항)
+              - drop_event:
+                  when:
+                    not:
+                      or:
+                        - contains:
+                            container.name: "asyncsite-"
+                        - contains:
+                            container.name: "logstash"
+                        - contains:
+                            container.name: "elasticsearch"
+                        - contains:
+                            container.name: "kibana"
 
+            # Logstash로 출력
             output.logstash:
               hosts: ["logstash:5044"]
+
+            # 로깅 설정
+            logging.level: info
+            logging.to_files: true
+            logging.files:
+              path: /var/log/filebeat
+              name: filebeat
+              keepfiles: 7
+              permissions: 0644
             EOF
 
             sudo chown root:root ./filebeat.yml
