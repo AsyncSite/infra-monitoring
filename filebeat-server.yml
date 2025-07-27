@@ -1,0 +1,51 @@
+# filebeat-server.yml
+# 서버 환경용 Filebeat 설정 - Docker 컨테이너 로그 직접 수집
+filebeat.inputs:
+  - type: container
+    enabled: true
+    paths:
+      - '/var/lib/docker/containers/*/*.log'
+    
+    # Docker 컨테이너 메타데이터 추가
+    processors:
+      - add_docker_metadata:
+          host: "unix:///var/run/docker.sock"
+      
+      # JSON 로그 디코딩 (애플리케이션이 JSON 형식으로 로그 출력하는 경우)
+      - decode_json_fields:
+          fields: ["message"]
+          target: ""
+          overwrite_keys: true
+          add_error_key: true
+
+# 추가 프로세서 - 모든 입력에 적용
+processors:
+  - add_host_metadata:
+      when.not.contains.tags: forwarded
+  
+  # 특정 컨테이너만 필터링 (선택사항)
+  - drop_event:
+      when:
+        not:
+          or:
+            - contains:
+                container.name: "asyncsite-"
+            - contains:
+                container.name: "logstash"
+            - contains:
+                container.name: "elasticsearch"
+            - contains:
+                container.name: "kibana"
+
+# Logstash로 출력
+output.logstash:
+  hosts: ["logstash:5044"]
+
+# 로깅 설정
+logging.level: info
+logging.to_files: true
+logging.files:
+  path: /var/log/filebeat
+  name: filebeat
+  keepfiles: 7
+  permissions: 0644

@@ -1,0 +1,15 @@
+# docker-compose.filebeat.server.yml
+# 서버 환경용 Filebeat 설정 - Docker 컨테이너 로그 직접 수집
+# 사용법: docker-compose -f docker-compose.filebeat.yml -f docker-compose.filebeat.server.yml up -d
+
+services:
+  filebeat-agent:
+    volumes:
+      # 1. 서버용 filebeat 설정 파일 마운트 (로컬 설정 대체)
+      - ./filebeat-server.yml:/usr/share/filebeat/filebeat.yml:ro
+      # 2. Docker 컨테이너 로그 디렉터리 마운트
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      # 3. Docker 메타데이터 수집을 위한 소켓 마운트
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # 4. Filebeat 로그 디렉터리
+      - /var/log/filebeat:/var/log/filebeat

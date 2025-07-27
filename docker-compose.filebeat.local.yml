@@ -5,8 +5,8 @@
 services:
   filebeat-agent:
     volumes:
-      # 1. 중앙 filebeat.yml 설정 파일 마운트 (상속)
-      - ./filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
+      # 1. 로컬용 filebeat 설정 파일 마운트
+      - ./filebeat-local.yml:/usr/share/filebeat/filebeat.yml:ro
       # 2. 로컬 환경용 로그 디렉터리 (macOS 호환)
       - ~/asyncsite-logs:/var/log/host_logs:ro
       # 3. Docker 메타데이터 수집을 위한 소켓 마운트 (상속)
