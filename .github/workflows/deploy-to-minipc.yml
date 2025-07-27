@@ -211,7 +211,7 @@ jobs:
             EOF
 
             # 5. 권한 문제 해결 - Docker 컨테이너 내에서 권한 변경
-            docker run --rm -v $(pwd)/filebeat.yml:/tmp/filebeat.yml alpine chown 0:0 /tmp/filebeat.yml
+            docker run --rm -v $(pwd)/filebeat.yml:/tmp/filebeat.yml alpine sh -c "chown 0:0 /tmp/filebeat.yml && chmod 600 /tmp/filebeat.yml"
 
             # 6. 최신 이미지 pull 및 재시작
             docker compose pull
