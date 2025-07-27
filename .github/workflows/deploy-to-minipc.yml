@@ -123,6 +123,8 @@ jobs:
               hosts: ["logstash:5044"]
             EOF
 
+            sudo chown root:root ./filebeat.yml
+
             # 5. 최신 이미지 pull 및 재시작
             docker compose pull
             docker compose down
