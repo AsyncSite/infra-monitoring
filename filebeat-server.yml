@@ -10,20 +10,13 @@ filebeat.inputs:
     processors:
       - add_docker_metadata:
           host: "unix:///var/run/docker.sock"
-      
-      # JSON 로그 디코딩 (애플리케이션이 JSON 형식으로 로그 출력하는 경우)
-      - decode_json_fields:
-          fields: ["message"]
-          target: ""
-          overwrite_keys: true
-          add_error_key: true
 
 # 추가 프로세서 - 모든 입력에 적용
 processors:
   - add_host_metadata:
       when.not.contains.tags: forwarded
   
-  # 특정 컨테이너만 필터링 (선택사항)
+  # 특정 컨테이너만 필터링
   - drop_event:
       when:
         not:

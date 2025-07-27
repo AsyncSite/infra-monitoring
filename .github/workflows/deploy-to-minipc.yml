@@ -103,48 +103,96 @@ jobs:
             }
 
             filter {
-              # JSON 로그 파싱
-              json {
-                source => "message"
-                target => "log"
-                skip_on_invalid_json => true
+              # Docker 컨테이너로부터 온 로그의 경우, message 필드가 이미 JSON 문자열일 수 있음
+              if [container] and [container][name] {
+                # Docker 로그에서 메시지 추출 (이미 Filebeat가 처리했을 수 있음)
+                if [message] =~ /^\{.*\}$/ {
+                  json {
+                    source => "message"
+                    target => "parsed_log"
+                    skip_on_invalid_json => true
+                  }
+                }
+              } else {
+                # 로컬 파일 기반 로그는 직접 JSON 파싱
+                json {
+                  source => "message"
+                  target => "parsed_log"
+                  skip_on_invalid_json => true
+                }
               }
               
-              # 파싱된 필드를 최상위로 이동
-              if [log] {
-                mutate {
-                  add_field => {
-                    "service" => "%{[log][service]}"
-                    "level" => "%{[log][level]}"
-                    "logger" => "%{[log][logger_name]}"
-                    "thread" => "%{[log][thread_name]}"
-                    "correlation_id" => "%{[log][corrId]}"
-                    "environment" => "%{[log][environment]}"
+              # 파싱된 필드 처리
+              if [parsed_log] {
+                # 필드 존재 여부 확인 후 추가
+                if [parsed_log][service] {
+                  mutate {
+                    add_field => { "service" => "%{[parsed_log][service]}" }
                   }
-                  remove_field => [ "[log][@version]" ]
+                }
+                if [parsed_log][level] {
+                  mutate {
+                    add_field => { "level" => "%{[parsed_log][level]}" }
+                  }
+                }
+                if [parsed_log][logger_name] {
+                  mutate {
+                    add_field => { "logger" => "%{[parsed_log][logger_name]}" }
+                  }
+                }
+                if [parsed_log][thread_name] {
+                  mutate {
+                    add_field => { "thread" => "%{[parsed_log][thread_name]}" }
+                  }
+                }
+                if [parsed_log][corrId] {
+                  mutate {
+                    add_field => { "correlation_id" => "%{[parsed_log][corrId]}" }
+                  }
+                }
+                if [parsed_log][environment] {
+                  mutate {
+                    add_field => { "environment" => "%{[parsed_log][environment]}" }
+                  }
                 }
                 
                 # 로그 레벨을 태그로 추가
-                if [log][level] == "ERROR" {
+                if [parsed_log][level] == "ERROR" {
                   mutate {
                     add_tag => [ "error" ]
                   }
                 }
-                if [log][level] == "WARN" {
+                if [parsed_log][level] == "WARN" {
                   mutate {
                     add_tag => [ "warning" ]
                   }
                 }
                 
                 # timestamp 파싱
-                date {
-                  match => [ "[log][@timestamp]", "ISO8601" ]
-                  target => "@timestamp"
+                if [parsed_log][@timestamp] {
+                  date {
+                    match => [ "[parsed_log][@timestamp]", "ISO8601" ]
+                    target => "@timestamp"
+                  }
                 }
                 
                 # 원본 message 필드를 파싱된 메시지로 교체
+                if [parsed_log][message] {
+                  mutate {
+                    replace => { "message" => "%{[parsed_log][message]}" }
+                  }
+                }
+                
+                # 임시 필드 제거
                 mutate {
-                  replace => { "message" => "%{[log][message]}" }
+                  remove_field => [ "parsed_log" ]
+                }
+              }
+              
+              # Docker 컨테이너 이름을 service 필드에 추가 (service 필드가 없는 경우)
+              if ![service] and [container][name] {
+                mutate {
+                  add_field => { "service" => "%{[container][name]}" }
                 }
               }
             }
@@ -169,20 +217,13 @@ jobs:
                 processors:
                   - add_docker_metadata:
                       host: "unix:///var/run/docker.sock"
-                  
-                  # JSON 로그 디코딩 (애플리케이션이 JSON 형식으로 로그 출력하는 경우)
-                  - decode_json_fields:
-                      fields: ["message"]
-                      target: ""
-                      overwrite_keys: true
-                      add_error_key: true
 
             # 추가 프로세서 - 모든 입력에 적용
             processors:
               - add_host_metadata:
                   when.not.contains.tags: forwarded
               
-              # 특정 컨테이너만 필터링 (선택사항)
+              # 특정 컨테이너만 필터링
               - drop_event:
                   when:
                     not:
