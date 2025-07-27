@@ -1,0 +1,21 @@
+# docker-compose.filebeat.yml
+services:
+  filebeat-agent:
+    image: docker.elastic.co/beats/filebeat:8.14.1
+    container_name: asyncsite-filebeat-agent
+    restart: unless-stopped
+    user: root
+    networks:
+      - asyncsite-network
+    volumes:
+      # 1. 중앙 filebeat.yml 설정 파일 마운트
+      - ./filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
+      # 2. 모든 서비스의 로그가 저장될 호스트의 상위 디렉터리 마운트
+      - /var/log/containers:/var/log/host_logs:ro
+      # 3. Docker 메타데이터 수집을 위한 소켓 마운트
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+
+networks:
+  asyncsite-network:
+    external: true

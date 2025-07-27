@@ -1,0 +1,13 @@
+filebeat.inputs:
+  - type: log
+    enabled: true
+    paths:
+      # 마운트된 디렉터리 아래의 모든 로그 파일을 대상으로 함
+      - /var/log/host_logs/*/*.log
+
+# Docker 메타데이터를 자동으로 추가하여 어떤 컨테이너의 로그인지 식별
+processors:
+  - add_docker_metadata: ~
+
+output.logstash:
+  hosts: ["logstash:5044"]
