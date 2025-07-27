@@ -24,31 +24,34 @@ docker-compose up -d
 
 ### 2. Filebeat 실행
 
-#### 서버 환경 (Production/Staging)
-```bash
-docker-compose -f docker-compose.filebeat.yml up -d
-```
+Filebeat는 환경에 따라 다른 설정을 사용합니다. 자세한 내용은 [FILEBEAT_GUIDE.md](./FILEBEAT_GUIDE.md)를 참조하세요.
 
 #### 로컬 개발 환경 (macOS)
 ```bash
-# 로그 디렉터리 생성
-mkdir -p ~/asyncsite-logs
-
-# 로컬 환경용 설정으로 실행
 docker-compose -f docker-compose.filebeat.yml -f docker-compose.filebeat.local.yml up -d
 ```
 
-## 로그 디렉터리 구조
+#### 서버 환경 (Production/Staging)
+```bash
+docker-compose -f docker-compose.filebeat.yml -f docker-compose.filebeat.server.yml up -d
 ```
-# 서버 환경
-/var/log/containers/
-├── user-service/
-│   └── application.log
-├── game-service/
-│   └── application.log
+
+## 로그 수집 방식
+
+### 서버 환경 - Docker 컨테이너 로그 직접 수집
+```
+# Docker 컨테이너 로그 위치
+/var/lib/docker/containers/
+├── {container-id}/
+│   └── {container-id}-json.log
 └── ...
 
-# 로컬 환경
+# Filebeat가 Docker 메타데이터를 통해 자동으로 서비스 식별
+# asyncsite-* 컨테이너만 필터링하여 수집
+```
+
+### 로컬 환경 - 파일 기반 로그 수집
+```
 ~/asyncsite-logs/
 ├── user-service/
 │   └── application.log
@@ -72,3 +75,5 @@ docker-compose -f docker-compose.filebeat.yml -f docker-compose.filebeat.local.y
 ## 개발 팁
 - Logstash 파이프라인 디버깅: `logstash.conf`의 stdout 출력 주석 해제
 - 로그 필드 확인: Kibana의 Discover에서 JSON 탭 확인
+- 서버 환경에서 특정 컨테이너 로그만 보기: `container.name: "asyncsite-user-service"`
+- Docker 로그 실시간 확인: `docker logs -f {container-name}`
