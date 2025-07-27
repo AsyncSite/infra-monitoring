@@ -1,0 +1,14 @@
+# docker-compose.filebeat.local.yml
+# 로컬 개발 환경용 Filebeat 설정 오버라이드
+# 사용법: docker-compose -f docker-compose.filebeat.yml -f docker-compose.filebeat.local.yml up -d
+
+services:
+  filebeat-agent:
+    volumes:
+      # 1. 중앙 filebeat.yml 설정 파일 마운트 (상속)
+      - ./filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
+      # 2. 로컬 환경용 로그 디렉터리 (macOS 호환)
+      - ~/asyncsite-logs:/var/log/host_logs:ro
+      # 3. Docker 메타데이터 수집을 위한 소켓 마운트 (상속)
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
