@@ -13,12 +13,34 @@ filebeat.inputs:
       # 1. Docker 메타데이터 추가
       - add_docker_metadata:
           host: "unix:///var/run/docker.sock"
-      # 2. log 필드의 JSON 문자열을 파싱
+      # 2. AsyncSite 서비스 컨테이너만 필터링 (elasticsearch 제외)
+      - drop_event:
+          when:
+            or:
+              - not:
+                  contains:
+                    container.name: "asyncsite-"
+              - contains:
+                  container.name: "elasticsearch"
+      # 3. log 필드의 JSON 문자열을 파싱
       - decode_json_fields:
           fields: ["log"]
           target: ""
           overwrite_keys: true
-      # 3. 불필요한 Docker 레이어 필드 제거  
+          when:
+            regexp:
+              log: '^\{.*\}$'
+      # 4. service 필드가 object인 경우 처리 (ES_ECS 로그 등)
+      - script:
+          lang: javascript
+          source: |
+            function process(event) {
+              var service = event.Get("service");
+              if (service && typeof service === "object" && service.name) {
+                event.Put("service", service.name);
+              }
+            }
+      # 5. 불필요한 Docker 레이어 필드 제거  
       - drop_fields:
           fields: ["log", "stream"]
           ignore_missing: true
@@ -27,13 +49,6 @@ filebeat.inputs:
 processors:
   - add_host_metadata:
       when.not.contains.tags: forwarded
-  
-  # asyncsite 서비스 컨테이너만 필터링
-  - drop_event:
-      when:
-        not:
-          contains:
-            container.name: "asyncsite-"
 
 # Elasticsearch 직접 연결 비활성화
 setup.template.enabled: false
