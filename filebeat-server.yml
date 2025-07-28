@@ -5,45 +5,30 @@ filebeat.inputs:
     enabled: true
     paths:
       - '/var/lib/docker/containers/*/*.log'
-    # Docker JSON 래핑 파싱 (log, stream, time)
-    json.keys_under_root: false
+    # AsyncSite 애플리케이션 서비스만 포함
+    include_lines: ['user-service', 'gateway', 'eureka-server', 'study-service', 'game-service', 'noti-service', 'notion-automation']
+    # 인프라 서비스 제외
+    exclude_lines: ['mysql', 'redis', 'elasticsearch', 'kibana', 'logstash', 'filebeat']
+    
+    # Docker JSON 파싱 설정
+    json.keys_under_root: true
     json.add_error_key: true
+    json.overwrite_keys: true
     json.message_key: log
+    
     processors:
       # 1. Docker 메타데이터 추가
       - add_docker_metadata:
           host: "unix:///var/run/docker.sock"
-      # 2. AsyncSite 서비스 컨테이너만 필터링 (elasticsearch 제외)
-      - drop_event:
-          when:
-            or:
-              - not:
-                  contains:
-                    container.name: "asyncsite-"
-              - contains:
-                  container.name: "elasticsearch"
-      # 3. log 필드의 JSON 문자열을 파싱
+      
+      # 2. log 필드가 JSON 문자열인 경우 파싱
       - decode_json_fields:
-          fields: ["log"]
+          fields: ["message"]
+          process_array: false
+          max_depth: 1
           target: ""
           overwrite_keys: true
-          when:
-            regexp:
-              log: '^\{.*\}$'
-      # 4. service 필드가 object인 경우 처리 (ES_ECS 로그 등)
-      - script:
-          lang: javascript
-          source: |
-            function process(event) {
-              var service = event.Get("service");
-              if (service && typeof service === "object" && service.name) {
-                event.Put("service", service.name);
-              }
-            }
-      # 5. 불필요한 Docker 레이어 필드 제거  
-      - drop_fields:
-          fields: ["log", "stream"]
-          ignore_missing: true
+          add_error_key: true
 
 # 추가 프로세서 - 모든 입력에 적용
 processors:
