@@ -47,8 +47,19 @@ jobs:
             
             # 3. Filebeat 에이전트 재시작 (설정 변경 적용)
             echo "Restarting Filebeat Agent to apply new configuration..."
-            docker compose -f docker-compose.filebeat.yml -f docker-compose.filebeat.server.yml down || true
+            # Force stop and remove Filebeat container and volumes to clear lock
+            docker stop asyncsite-filebeat-agent 2>/dev/null || true
+            docker rm -v asyncsite-filebeat-agent 2>/dev/null || true
+            # Remove any lingering data directory that might have locks
+            docker volume ls -q | grep filebeat | xargs -r docker volume rm 2>/dev/null || true
+            # Start fresh
             docker compose -f docker-compose.filebeat.yml -f docker-compose.filebeat.server.yml up -d
+            
+            # Wait and verify Filebeat is running
+            sleep 10
+            echo "Checking Filebeat status..."
+            docker ps | grep filebeat-agent || echo "WARNING: Filebeat may not be running"
+            docker logs asyncsite-filebeat-agent --tail 20 2>&1 || echo "Could not get Filebeat logs"
             
             # 4. 네트워크 생성 (없을 경우)
             echo "Creating Docker network if not exists..."
