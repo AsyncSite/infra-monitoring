@@ -56,7 +56,7 @@ jobs:
             # 5. Kibana 인덱스 패턴 자동 설정 (최초 1회)
             echo "Setting up Kibana index patterns..."
             sleep 30
-            docker compose -f docker-compose.server.yml up kibana-setup || echo "Index patterns may already exist"
+            docker compose -f docker-compose.yml -f docker-compose.server.yml up kibana-setup || echo "Index patterns may already exist"
       
       - name: Send Discord Notification
         if: always()

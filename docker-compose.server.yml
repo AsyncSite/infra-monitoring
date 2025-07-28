@@ -42,3 +42,7 @@ services:
         
         echo "Index patterns created successfully"
       '
+
+networks:
+  asyncsite-network:
+    external: true
