@@ -16,24 +16,24 @@ jobs:
 
       # 2. 러너에 있는 설정 파일들을 원격 Mini PC로 복사합니다.
       - name: Copy config files to Mini PC
-        uses: appleboy/scp-action@v0.1.7
+        uses: appleboy/scp-action@master
         with:
           host: ${{ secrets.MINI_PC_HOST }}
           username: ${{ secrets.MINI_PC_USER }}
           key: ${{ secrets.MINI_PC_SSH_KEY }}
           port: 2222
-          source: | 
+          source: |
             ./docker-compose.yml
             ./docker-compose.filebeat.yml
             ./docker-compose.filebeat.server.yml
             ./filebeat-server.yml
-            ./logstash/
+            ./logstash
           target: "~/elk-stack"
           rm: true # 복사 전 원격 디렉터리 내용 삭제
 
       # 3. Mini PC에 접속하여 Docker Compose를 실행합니다.
       - name: Execute docker-compose on Mini PC
-        uses: appleboy/ssh-action@v1.0.3
+        uses: appleboy/ssh-action@master
         with:
           host: ${{ secrets.MINI_PC_HOST }}
           username: ${{ secrets.MINI_PC_USER }}
