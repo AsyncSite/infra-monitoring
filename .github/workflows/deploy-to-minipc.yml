@@ -22,7 +22,7 @@ jobs:
           username: ${{ secrets.MINI_PC_USER }}
           key: ${{ secrets.MINI_PC_SSH_KEY }}
           port: 2222
-          source: | # 복사할 파일 및 디렉터리 목록
+          source: | 
             ./docker-compose.yml
             ./docker-compose.filebeat.yml
             ./docker-compose.filebeat.server.yml
@@ -41,8 +41,15 @@ jobs:
           port: 2222
           script: |
             cd ~/elk-stack
-            # 파일 소유자 변경
-            sudo chown root:root ./filebeat.yml
-            # 스택 실행
-            docker compose pull
-            docker-compose -f docker-compose.filebeat.yml -f docker-compose.filebeat.server.yml up -d
+            
+            # 1. 메인 ELK 스택 (Elasticsearch, Logstash, Kibana) 실행
+            echo "Starting ELK Stack..."
+            docker compose -f docker-compose.yml up -d
+            
+            # 2. Filebeat 설정 파일 권한 변경 (올바른 파일 대상)
+            echo "Changing ownership of filebeat-server.yml..."
+            sudo chown root:root ./filebeat-server.yml
+            
+            # 3. Filebeat 에이전트 실행
+            echo "Starting Filebeat Agent..."
+            docker compose -f docker-compose.filebeat.yml -f docker-compose.filebeat.server.yml up -d
