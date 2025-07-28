@@ -49,7 +49,11 @@ jobs:
             echo "Starting Filebeat Agent..."
             docker compose -f docker-compose.filebeat.yml -f docker-compose.filebeat.server.yml up -d
             
-            # 4. Kibana 인덱스 패턴 자동 설정 (최초 1회)
+            # 4. 네트워크 생성 (없을 경우)
+            echo "Creating Docker network if not exists..."
+            docker network create asyncsite-network 2>/dev/null || echo "Network already exists"
+            
+            # 5. Kibana 인덱스 패턴 자동 설정 (최초 1회)
             echo "Setting up Kibana index patterns..."
             sleep 30
             docker compose -f docker-compose.server.yml up kibana-setup || echo "Index patterns may already exist"
