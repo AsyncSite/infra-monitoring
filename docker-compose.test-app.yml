@@ -1,0 +1,26 @@
+# docker-compose.test-app.yml
+# 로컬 테스트용 AsyncSite 서비스 시뮬레이션
+version: '3.8'
+
+services:
+  asyncsite-user-service-mock:
+    build: ./test-app
+    container_name: asyncsite-user-service-mock
+    networks:
+      - asyncsite-network
+    labels:
+      - "service=user-service"
+  
+  asyncsite-gateway-mock:
+    build: ./test-app
+    container_name: asyncsite-gateway-mock
+    environment:
+      - SERVICE_NAME=gateway
+    networks:
+      - asyncsite-network
+    labels:
+      - "service=gateway"
+
+networks:
+  asyncsite-network:
+    external: true

@@ -1,0 +1,15 @@
+# docker-compose.filebeat.local-container.yml
+# 로컬에서 서버와 동일한 Docker 컨테이너 로그 수집 방식 테스트용
+version: '3.8'
+
+services:
+  filebeat-agent:
+    volumes:
+      # 서버와 동일하게 Docker 컨테이너 로그 직접 접근
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # 서버용 설정 파일 사용
+      - ./filebeat-server.yml:/usr/share/filebeat/filebeat.yml:ro
+      - ./filebeat_logs:/var/log/filebeat
+    environment:
+      - DOCKER_HOST=unix:///var/run/docker.sock
