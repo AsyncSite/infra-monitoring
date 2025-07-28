@@ -11,7 +11,12 @@ services:
     user: root
     networks:
       - asyncsite-network
-    # volumes는 환경별 오버라이드 파일에서 정의
+    volumes:
+      - ./filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
+      - /var/log/containers:/var/log/host_logs:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+
 
 networks:
   asyncsite-network:
