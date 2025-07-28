@@ -11,10 +11,6 @@ services:
     user: root
     networks:
       - asyncsite-network
-    volumes:
-      - /var/log/containers:/var/log/host_logs:ro
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-      - /var/lib/docker/containers:/var/lib/docker/containers:ro
 
 
 networks:
