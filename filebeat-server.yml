@@ -1,12 +1,10 @@
 # filebeat-server.yml
 # 서버 환경용 Filebeat 설정 - Docker 컨테이너 로그 직접 수집
 filebeat.inputs:
-  - type: log
+  - type: container
     enabled: true
     paths:
-      - /var/log/host_logs/*/*.log
-    
-    # Docker 컨테이너 메타데이터 추가
+      - '/var/lib/docker/containers/*/*.log' # Docker 표준 로그 경로
     processors:
       - add_docker_metadata:
           host: "unix:///var/run/docker.sock"
