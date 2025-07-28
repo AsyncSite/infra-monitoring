@@ -55,11 +55,20 @@ jobs:
             # Start fresh
             docker compose -f docker-compose.filebeat.yml -f docker-compose.filebeat.server.yml up -d
             
+            # Clean up old indices to resolve field type conflicts
+            echo "Cleaning up Elasticsearch indices..."
+            docker exec elasticsearch curl -X DELETE "localhost:9200/filebeat-*" 2>/dev/null || true
+            docker exec elasticsearch curl -X DELETE "localhost:9200/asyncsite-*" 2>/dev/null || true
+            
             # Wait and verify Filebeat is running
             sleep 10
             echo "Checking Filebeat status..."
             docker ps | grep filebeat-agent || echo "WARNING: Filebeat may not be running"
             docker logs asyncsite-filebeat-agent --tail 20 2>&1 || echo "Could not get Filebeat logs"
+            
+            # Check Elasticsearch indices
+            echo "Current Elasticsearch indices:"
+            docker exec elasticsearch curl -s "localhost:9200/_cat/indices?v" | grep -E "(filebeat|asyncsite)" || echo "No indices yet"
             
             # 4. 네트워크 생성 (없을 경우)
             echo "Creating Docker network if not exists..."

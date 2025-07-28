@@ -9,6 +9,12 @@ filebeat.inputs:
     # container input은 기본적으로 Docker JSON을 파싱함
     # log 필드만 추가로 파싱하면 됨
     
+    # Docker 컨테이너의 JSON 로그 처리
+    json.keys_under_root: false
+    json.overwrite_keys: false
+    json.add_error_key: true
+    json.message_key: log
+    
     processors:
       # 1. Docker 메타데이터 추가
       - add_docker_metadata:
@@ -21,18 +27,28 @@ filebeat.inputs:
               regexp:
                 container.name: "^asyncsite-(user-service|gateway|eureka|study-service|game-service|noti-service|notion-automation)"
       
-      # 3. message 필드의 JSON 파싱 (container input은 log를 message로 저장)
+      # 3. log 필드가 JSON 문자열인 경우만 파싱
       - decode_json_fields:
-          fields: ["message"]
+          fields: ["log"]
           process_array: false
           max_depth: 1
-          target: ""
-          overwrite_keys: true
-          add_error_key: false
+          target: "app"
+          overwrite_keys: false
+          add_error_key: true
+          when:
+            regexp:
+              log: "^\{.*\}$"
       
-      # 4. 불필요한 필드 제거
+      # 4. app.service 필드를 최상위로 이동
+      - rename:
+          fields:
+            - from: "app.service"
+              to: "service"
+          ignore_missing: true
+      
+      # 5. 불필요한 필드 제거
       - drop_fields:
-          fields: ["message", "stream", "container.labels"]
+          fields: ["stream", "container.labels"]
           ignore_missing: true
 
 # 추가 프로세서 - 모든 입력에 적용
