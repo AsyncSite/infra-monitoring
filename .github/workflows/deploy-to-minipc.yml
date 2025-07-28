@@ -9,12 +9,30 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-
     steps:
+      # 1. 배포할 코드(설정 파일 포함)를 GitHub Actions 러너 환경으로 가져옵니다.
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Deploy to Mini PC via SSH
+      # 2. 러너에 있는 설정 파일들을 원격 Mini PC로 복사합니다.
+      - name: Copy config files to Mini PC
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.MINI_PC_HOST }}
+          username: ${{ secrets.MINI_PC_USER }}
+          key: ${{ secrets.MINI_PC_SSH_KEY }}
+          port: 2222
+          source: | # 복사할 파일 및 디렉터리 목록
+            ./docker-compose.yml
+            ./docker-compose.filebeat.yml
+            ./docker-compose.filebeat.server.yml
+            ./filebeat.yml
+            ./logstash/
+          target: "~/elk-stack"
+          rm: true # 복사 전 원격 디렉터리 내용 삭제
+
+      # 3. Mini PC에 접속하여 Docker Compose를 실행합니다.
+      - name: Execute docker-compose on Mini PC
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.MINI_PC_HOST }}
@@ -22,246 +40,9 @@ jobs:
           key: ${{ secrets.MINI_PC_SSH_KEY }}
           port: 2222
           script: |
-            # 1. 작업 디렉토리로 이동
-            mkdir -p ~/elk-stack
             cd ~/elk-stack
-
-            # 2. docker-compose.yml 파일 생성 
-            cat > docker-compose.yml << 'EOF'
-            version: '3.8'
-
-            services:
-              elasticsearch:
-                image: docker.elastic.co/elasticsearch/elasticsearch:8.14.1
-                container_name: elasticsearch
-                environment:
-                  - discovery.type=single-node
-                  - xpack.security.enabled=false
-                  - "ES_JAVA_OPTS=-Xms1g -Xmx1g"
-                volumes:
-                  - esdata:/usr/share/elasticsearch/data
-                ports:
-                  - "9200:9200"
-                networks:
-                  - asyncsite-network
-
-              logstash:
-                image: docker.elastic.co/logstash/logstash:8.14.1
-                container_name: logstash
-                volumes:
-                  - ./logstash/pipeline:/usr/share/logstash/pipeline/
-                ports:
-                  - "5044:5044"
-                networks:
-                  - asyncsite-network
-                depends_on:
-                  - elasticsearch
-
-              kibana:
-                image: docker.elastic.co/kibana/kibana:8.14.1
-                container_name: kibana
-                environment:
-                  - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
-                ports:
-                  - "5601:5601"
-                networks:
-                  - asyncsite-network
-                depends_on:
-                  - elasticsearch
-
-              filebeat-agent:
-                image: docker.elastic.co/beats/filebeat:8.14.1
-                container_name: asyncsite-filebeat-agent
-                restart: unless-stopped
-                user: root
-                networks:
-                  - asyncsite-network
-                volumes:
-                  - ./filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
-                  - /var/lib/docker/containers:/var/lib/docker/containers:ro
-                  - /var/run/docker.sock:/var/run/docker.sock:ro
-                  - /var/log/filebeat:/var/log/filebeat
-                depends_on:
-                  - logstash
-
-            volumes:
-              esdata:
-                driver: local
-
-            networks:
-              asyncsite-network:
-                external: true
-            EOF
-
-            # 3. Logstash 설정 파일 생성
-            mkdir -p ./logstash/pipeline
-            cat > ./logstash/pipeline/logstash.conf << 'EOF'
-            input {
-              beats {
-                port => 5044
-              }
-            }
-
-            filter {
-              # 서버: Filebeat가 이미 JSON을 디코딩한 경우 (corrId가 최상위에 있음)
-              if [corrId] and ![correlation_id] {
-                mutate {
-                  add_field => { "correlation_id" => "%{[corrId]}" }
-                }
-              }
-              
-              # Docker 컨테이너로부터 온 로그의 경우, message 필드가 이미 JSON 문자열일 수 있음
-              if [container] and [container][name] {
-                # Docker 로그에서 메시지 추출 (이미 Filebeat가 처리했을 수 있음)
-                if [message] =~ /^\{.*\}$/ {
-                  json {
-                    source => "message"
-                    target => "parsed_log"
-                    skip_on_invalid_json => true
-                  }
-                }
-              } else {
-                # 로컬 파일 기반 로그는 직접 JSON 파싱
-                json {
-                  source => "message"
-                  target => "parsed_log"
-                  skip_on_invalid_json => true
-                }
-              }
-              
-              # 파싱된 필드 처리
-              if [parsed_log] {
-                # 필드 존재 여부 확인 후 추가
-                if [parsed_log][service] {
-                  mutate {
-                    add_field => { "service" => "%{[parsed_log][service]}" }
-                  }
-                }
-                if [parsed_log][level] {
-                  mutate {
-                    add_field => { "level" => "%{[parsed_log][level]}" }
-                  }
-                }
-                if [parsed_log][logger_name] {
-                  mutate {
-                    add_field => { "logger" => "%{[parsed_log][logger_name]}" }
-                  }
-                }
-                if [parsed_log][thread_name] {
-                  mutate {
-                    add_field => { "thread" => "%{[parsed_log][thread_name]}" }
-                  }
-                }
-                if [parsed_log][corrId] {
-                  mutate {
-                    add_field => { "correlation_id" => "%{[parsed_log][corrId]}" }
-                  }
-                }
-                if [parsed_log][environment] {
-                  mutate {
-                    add_field => { "environment" => "%{[parsed_log][environment]}" }
-                  }
-                }
-                
-                # 로그 레벨을 태그로 추가
-                if [parsed_log][level] == "ERROR" {
-                  mutate {
-                    add_tag => [ "error" ]
-                  }
-                }
-                if [parsed_log][level] == "WARN" {
-                  mutate {
-                    add_tag => [ "warning" ]
-                  }
-                }
-                
-                # timestamp 파싱
-                if [parsed_log][@timestamp] {
-                  date {
-                    match => [ "[parsed_log][@timestamp]", "ISO8601" ]
-                    target => "@timestamp"
-                  }
-                }
-                
-                # 원본 message 필드를 파싱된 메시지로 교체
-                if [parsed_log][message] {
-                  mutate {
-                    replace => { "message" => "%{[parsed_log][message]}" }
-                  }
-                }
-                
-                # 임시 필드 제거
-                mutate {
-                  remove_field => [ "parsed_log" ]
-                }
-              }
-              
-              # Docker 컨테이너 이름을 service 필드에 추가 (service 필드가 없는 경우)
-              if ![service] and [container][name] {
-                mutate {
-                  add_field => { "service" => "%{[container][name]}" }
-                }
-              }
-            }
-
-            output {
-              elasticsearch {
-                hosts => [ "http://elasticsearch:9200" ]
-                index => "%{[@metadata][beat]}-%{[@metadata][version]}-%{+YYYY.MM.dd}"
-              }
-            }
-            EOF
-            
-            # 4. Filebeat 설정 파일 생성 (서버용 - Docker 컨테이너 로그 직접 수집)
-            cat > ./filebeat.yml << 'EOF'
-            filebeat.inputs:
-              - type: container
-                enabled: true
-                paths:
-                  - '/var/lib/docker/containers/*/*.log'
-                
-                # Docker 컨테이너 메타데이터 추가
-                processors:
-                  - add_docker_metadata:
-                      host: "unix:///var/run/docker.sock"
-
-            # 추가 프로세서 - 모든 입력에 적용
-            processors:
-              - add_host_metadata:
-                  when.not.contains.tags: forwarded
-              
-              # 특정 컨테이너만 필터링
-              - drop_event:
-                  when:
-                    not:
-                      or:
-                        - contains:
-                            container.name: "asyncsite-"
-                        - contains:
-                            container.name: "logstash"
-                        - contains:
-                            container.name: "elasticsearch"
-                        - contains:
-                            container.name: "kibana"
-
-            # Logstash로 출력
-            output.logstash:
-              hosts: ["logstash:5044"]
-
-            # 로깅 설정
-            logging.level: info
-            logging.to_files: true
-            logging.files:
-              path: /var/log/filebeat
-              name: filebeat
-              keepfiles: 7
-              permissions: 0644
-            EOF
-
-            # 5. 권한 문제 해결 - Docker 컨테이너 내에서 권한 변경
-            docker run --rm -v $(pwd)/filebeat.yml:/tmp/filebeat.yml alpine sh -c "chown 0:0 /tmp/filebeat.yml && chmod 600 /tmp/filebeat.yml"
-
-            # 6. 최신 이미지 pull 및 재시작
+            # 파일 소유자 변경
+            sudo chown root:root ./filebeat.yml
+            # 스택 실행
             docker compose pull
-            docker compose down
-            docker compose up -d
+            docker-compose -f docker-compose.filebeat.yml -f docker-compose.filebeat.server.yml up -d
