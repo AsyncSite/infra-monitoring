@@ -22,7 +22,7 @@ jobs:
           username: ${{ secrets.MINI_PC_USER }}
           key: ${{ secrets.MINI_PC_SSH_KEY }}
           port: 2222
-          source: "./docker-compose.yml,./docker-compose.filebeat.yml,./docker-compose.filebeat.server.yml,./filebeat-server.yml,./logstash"
+          source: "./docker-compose.yml,./docker-compose.filebeat.yml,./docker-compose.filebeat.server.yml,./docker-compose.server.yml,./filebeat-server.yml,./logstash"
           target: "~/elk-stack"
           rm: true # 복사 전 원격 디렉터리 내용 삭제
 
@@ -48,6 +48,11 @@ jobs:
             # 3. Filebeat 에이전트 실행
             echo "Starting Filebeat Agent..."
             docker compose -f docker-compose.filebeat.yml -f docker-compose.filebeat.server.yml up -d
+            
+            # 4. Kibana 인덱스 패턴 자동 설정 (최초 1회)
+            echo "Setting up Kibana index patterns..."
+            sleep 30
+            docker compose -f docker-compose.server.yml up kibana-setup || echo "Index patterns may already exist"
       
       - name: Send Discord Notification
         if: always()
