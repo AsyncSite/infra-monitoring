@@ -45,8 +45,9 @@ jobs:
             echo "Changing ownership of filebeat-server.yml..."
             docker run --rm -v $(pwd)/filebeat-server.yml:/tmp/filebeat.yml alpine sh -c "chown 0:0 /tmp/filebeat.yml && chmod 600 /tmp/filebeat.yml"
             
-            # 3. Filebeat 에이전트 실행
-            echo "Starting Filebeat Agent..."
+            # 3. Filebeat 에이전트 재시작 (설정 변경 적용)
+            echo "Restarting Filebeat Agent to apply new configuration..."
+            docker compose -f docker-compose.filebeat.yml -f docker-compose.filebeat.server.yml down || true
             docker compose -f docker-compose.filebeat.yml -f docker-compose.filebeat.server.yml up -d
             
             # 4. 네트워크 생성 (없을 경우)
