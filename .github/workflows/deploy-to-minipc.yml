@@ -26,7 +26,7 @@ jobs:
             ./docker-compose.yml
             ./docker-compose.filebeat.yml
             ./docker-compose.filebeat.server.yml
-            ./filebeat.yml
+            ./filebeat-server.yml
             ./logstash/
           target: "~/elk-stack"
           rm: true # 복사 전 원격 디렉터리 내용 삭제
