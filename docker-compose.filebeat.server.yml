@@ -4,6 +4,7 @@
 
 services:
   filebeat-agent:
+    user: root
     volumes:
       # 1. 서버용 filebeat 설정 파일 마운트 (로컬 설정 대체)
       - ./filebeat-server.yml:/usr/share/filebeat/filebeat.yml:ro
