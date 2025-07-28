@@ -41,6 +41,10 @@ jobs:
             echo "Starting ELK Stack..."
             docker compose -f docker-compose.yml up -d
             
-            # 2. Filebeat 에이전트 실행
+            # 2. Filebeat 설정 파일 권한 변경
+            echo "Changing ownership of filebeat-server.yml..."
+            docker run --rm -v $(pwd)/filebeat-server.yml:/tmp/filebeat.yml alpine sh -c "chown 0:0 /tmp/filebeat.yml && chmod 600 /tmp/filebeat.yml"
+            
+            # 3. Filebeat 에이전트 실행
             echo "Starting Filebeat Agent..."
             docker compose -f docker-compose.filebeat.yml -f docker-compose.filebeat.server.yml up -d
