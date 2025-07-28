@@ -4,34 +4,40 @@ filebeat.inputs:
   - type: container
     enabled: true
     paths:
-      - '/var/lib/docker/containers/*/*.log' # Docker 표준 로그 경로
+      - '/var/lib/docker/containers/*/*.log'
+    # Docker JSON 래핑 파싱 (log, stream, time)
+    json.keys_under_root: false
+    json.add_error_key: true
+    json.message_key: log
     processors:
+      # 1. Docker 메타데이터 추가
       - add_docker_metadata:
           host: "unix:///var/run/docker.sock"
-    multiline:
-      type: pattern
-      pattern: '^[[:space:]]'
-      negate: true
-      match: after
+      # 2. log 필드의 JSON 문자열을 파싱
+      - decode_json_fields:
+          fields: ["log"]
+          target: ""
+          overwrite_keys: true
+      # 3. 불필요한 Docker 레이어 필드 제거  
+      - drop_fields:
+          fields: ["log", "stream"]
+          ignore_missing: true
 
 # 추가 프로세서 - 모든 입력에 적용
 processors:
   - add_host_metadata:
       when.not.contains.tags: forwarded
   
-  # 특정 컨테이너만 필터링
+  # asyncsite 서비스 컨테이너만 필터링
   - drop_event:
       when:
         not:
-          or:
-            - contains:
-                container.name: "asyncsite-"
-            - contains:
-                container.name: "logstash"
-            - contains:
-                container.name: "elasticsearch"
-            - contains:
-                container.name: "kibana"
+          contains:
+            container.name: "asyncsite-"
+
+# Elasticsearch 직접 연결 비활성화
+setup.template.enabled: false
+setup.ilm.enabled: false
 
 # Logstash로 출력
 output.logstash:

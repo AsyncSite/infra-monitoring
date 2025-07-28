@@ -11,9 +11,10 @@ AsyncSite 프로젝트의 중앙화된 로그 수집 및 모니터링을 위한 
 
 ## 특징
 - JSON 형식 로그 자동 파싱
-- 서비스별 로그 필터링
+- **서비스별 인덱스 분리**: `asyncsite-{service}-{date}` 형태로 자동 생성
 - 상관관계 ID(corrId)를 통한 요청 추적
 - 로그 레벨별 태그 지정
+- Kibana 인덱스 패턴 자동 설정
 
 ## 시작하기
 
@@ -28,12 +29,20 @@ Filebeat는 환경에 따라 다른 설정을 사용합니다. 자세한 내용�
 
 #### 로컬 개발 환경 (macOS)
 ```bash
+# 로그 디렉토리 생성 (최초 1회)
+mkdir -p ~/asyncsite-logs/{user-service,gateway,eureka-server,study-service,game-service,noti-service}
+
+# Filebeat 실행
 docker-compose -f docker-compose.filebeat.yml -f docker-compose.filebeat.local.yml up -d
 ```
 
 #### 서버 환경 (Production/Staging)
 ```bash
+# Filebeat 실행
 docker-compose -f docker-compose.filebeat.yml -f docker-compose.filebeat.server.yml up -d
+
+# Kibana 인덱스 패턴 자동 설정 (최초 1회)
+docker-compose -f docker-compose.server.yml up kibana-setup
 ```
 
 ## 로그 수집 방식
@@ -62,15 +71,22 @@ docker-compose -f docker-compose.filebeat.yml -f docker-compose.filebeat.server.
 
 ## Kibana 사용법
 1. 브라우저에서 http://localhost:5601 접속
-2. Stack Management → Index Patterns → Create index pattern
-3. Index pattern: `filebeat-*`
-4. Time field: `@timestamp`
-5. Discover 메뉴에서 로그 조회
+2. 왼쪽 메뉴에서 Discover 클릭
+3. 인덱스 패턴 선택:
+   - `asyncsite-*`: 전체 서비스 로그
+   - `asyncsite-user-service-*`: 특정 서비스 로그
+4. 시간 범위 설정 후 로그 조회
 
 ### 유용한 필터
 - 특정 서비스: `service: "user-service"`
 - 에러 로그: `level: "ERROR"`
 - 상관관계 추적: `correlation_id: "특정ID"`
+
+### 인덱스 패턴 확인
+```bash
+# 생성된 인덱스 목록 조회
+curl -s 'localhost:9200/_cat/indices?v' | grep asyncsite
+```
 
 ## 개발 팁
 - Logstash 파이프라인 디버깅: `logstash.conf`의 stdout 출력 주석 해제

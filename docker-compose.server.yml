@@ -1,0 +1,44 @@
+# docker-compose.server.yml
+# 서버 환경용 ELK 스택 - 실제 운영에 필요한 최소 구성
+# 사용법: docker-compose -f docker-compose.yml -f docker-compose.filebeat.yml -f docker-compose.filebeat.server.yml up -d
+
+version: '3.8'
+
+services:
+  # 기존 docker-compose.yml의 서비스들은 그대로 사용
+  # filebeat만 서버용으로 오버라이드됨 (docker-compose.filebeat.server.yml 참조)
+  
+  # Kibana 초기 설정을 위한 일회성 작업
+  kibana-setup:
+    image: curlimages/curl:latest
+    container_name: asyncsite-kibana-setup
+    depends_on:
+      - kibana
+    networks:
+      - asyncsite-network
+    restart: "no"
+    command: |
+      sh -c '
+        echo "Waiting for Kibana to be ready..."
+        while ! curl -s -f "http://kibana:5601/api/status" > /dev/null; do
+          sleep 5
+        done
+        
+        echo "Creating index patterns..."
+        
+        # asyncsite-* 인덱스 패턴 생성
+        curl -X POST "http://kibana:5601/api/saved_objects/index-pattern/asyncsite-all" \
+          -H "kbn-xsrf: true" \
+          -H "Content-Type: application/json" \
+          -d "{\"attributes\":{\"title\":\"asyncsite-*\",\"timeFieldName\":\"@timestamp\"}}"
+        
+        # 각 서비스별 인덱스 패턴
+        for service in user-service gateway eureka-server study-service game-service noti-service; do
+          curl -X POST "http://kibana:5601/api/saved_objects/index-pattern/asyncsite-$service" \
+            -H "kbn-xsrf: true" \
+            -H "Content-Type: application/json" \
+            -d "{\"attributes\":{\"title\":\"asyncsite-$service-*\",\"timeFieldName\":\"@timestamp\"}}"
+        done
+        
+        echo "Index patterns created successfully"
+      '
