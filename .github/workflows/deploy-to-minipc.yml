@@ -42,22 +42,29 @@ jobs:
             docker compose -f docker-compose.yml up -d
             
             # 2. Filebeat 설정 파일 권한 변경
-            echo "Changing ownership of filebeat-server.yml..."
-            docker run --rm -v $(pwd)/filebeat-server.yml:/tmp/filebeat.yml alpine sh -c "chown 0:0 /tmp/filebeat.yml && chmod 600 /tmp/filebeat.yml"
+            echo "Setting permissions for filebeat-server.yml..."
+            chmod 644 filebeat-server.yml
             
             # 3. Filebeat 에이전트 재시작 (설정 변경 적용)
             echo "Restarting Filebeat Agent to apply new configuration..."
-            # Force stop and remove Filebeat container and volumes to clear lock
-            docker stop asyncsite-filebeat-agent 2>/dev/null || true
-            docker rm -v asyncsite-filebeat-agent 2>/dev/null || true
+            # Stop ALL filebeat containers (including orphans)
+            echo "Stopping all Filebeat containers..."
+            docker ps -a | grep filebeat | awk '{print $1}' | xargs -r docker stop 2>/dev/null || true
+            docker ps -a | grep filebeat | awk '{print $1}' | xargs -r docker rm -v 2>/dev/null || true
             # Remove any lingering data directory that might have locks
             docker volume ls -q | grep filebeat | xargs -r docker volume rm 2>/dev/null || true
+            # Clean up orphan containers
+            docker compose -f docker-compose.filebeat.yml -f docker-compose.filebeat.server.yml down --remove-orphans
             # Start fresh
             docker compose -f docker-compose.filebeat.yml -f docker-compose.filebeat.server.yml up -d
             
             # Clean up old indices to resolve field type conflicts
             echo "Cleaning up Elasticsearch indices..."
-            docker exec elasticsearch curl -X DELETE "localhost:9200/filebeat-*" 2>/dev/null || true
+            # List and delete filebeat indices one by one (Elasticsearch may not allow wildcard deletion)
+            for index in $(docker exec elasticsearch curl -s "localhost:9200/_cat/indices" | grep "filebeat-" | awk '{print $3}'); do
+              echo "Deleting index: $index"
+              docker exec elasticsearch curl -X DELETE "localhost:9200/$index" 2>/dev/null || true
+            done
             # NOTE: asyncsite-* indices are not deleted to preserve production data
             
             # Wait and verify Filebeat is running
@@ -70,6 +77,19 @@ jobs:
             echo "Current Elasticsearch indices:"
             docker exec elasticsearch curl -s "localhost:9200/_cat/indices?v" | grep -E "(filebeat|asyncsite)" || echo "No indices yet"
             
+            # Verify Filebeat is using correct configuration
+            echo "Verifying Filebeat configuration..."
+            docker exec asyncsite-filebeat-agent cat /usr/share/filebeat/filebeat.yml | grep -E "(type:|output:|logstash)" | head -10 || echo "Could not read Filebeat config"
+            
+            # Send a test log to verify service-based indexing
+            echo "Sending test log..."
+            if docker ps | grep -q "asyncsite-user-service"; then
+              docker exec asyncsite-user-service sh -c "echo '{\"timestamp\":\"$(date -u +%Y-%m-%dT%H:%M:%S.000Z)\",\"service\":\"user-service\",\"level\":\"INFO\",\"message\":\"CI/CD deployment test\"}' >&2"
+              sleep 15
+              echo "Checking for asyncsite-user-service index..."
+              docker exec elasticsearch curl -s "localhost:9200/_cat/indices?v" | grep "asyncsite-user-service" || echo "Service-based index not yet created"
+            fi
+            
             # 4. 네트워크 생성 (없을 경우)
             echo "Creating Docker network if not exists..."
             docker network create asyncsite-network 2>/dev/null || echo "Network already exists"
@@ -78,30 +98,38 @@ jobs:
             echo "Setting up Kibana index patterns..."
             sleep 30
             docker compose -f docker-compose.yml -f docker-compose.server.yml up kibana-setup || echo "Index patterns may already exist"
+            
+            # Final status check
+            echo "=== Final Status Check ==="
+            echo "Running containers:"
+            docker ps | grep -E "(elasticsearch|logstash|kibana|filebeat)" || echo "No ELK containers found"
+            echo ""
+            echo "Elasticsearch indices:"
+            docker exec elasticsearch curl -s "localhost:9200/_cat/indices?v" | grep -E "(asyncsite-.*-2|filebeat-)" | sort || echo "No relevant indices found"
       
-      - name: Send Discord Notification
-        if: always()
-        env:
-          STATUS_COLOR: ${{ job.status == 'success' && '3066993' || '15158332' }}
-          STATUS_EMOJI: ${{ job.status == 'success' && '✅' || '❌' }}
-        run: |
-          curl -H "Content-Type: application/json" \
-               -X POST \
-               -d "{
-                 \"embeds\": [{
-                   \"title\": \"$STATUS_EMOJI infra-monitoring ELK Stack 배포 ${{ job.status }}\",
-                   \"color\": $STATUS_COLOR,
-                   \"fields\": [
-                     {\"name\": \"서비스\", \"value\": \"ELK Stack (Elasticsearch, Logstash, Kibana, Filebeat)\", \"inline\": false},
-                     {\"name\": \"브랜치\", \"value\": \"${{ github.ref_name }}\", \"inline\": true},
-                     {\"name\": \"배포자\", \"value\": \"${{ github.actor }}\", \"inline\": true},
-                     {\"name\": \"커밋\", \"value\": \"\`${GITHUB_SHA::8}\`\", \"inline\": false},
-                     {\"name\": \"시간\", \"value\": \"$(TZ=Asia/Seoul date +'%Y-%m-%d %H:%M:%S KST')\", \"inline\": false}
-                   ],
-                   \"footer\": {
-                     \"text\": \"AsyncSite CI/CD\"
-                   },
-                   \"timestamp\": \"$(date -u +%Y-%m-%dT%H:%M:%S.000Z)\"
-                 }]
-               }" \
-               https://discord.com/api/webhooks/1399402822105038999/2qQDazifNKeW_c8MhHqcrw6Li5yDQtBL7f2JIBQ_b4qVT3Vxh7TfpMV3kBFnDYAFL3-h
+#      - name: Send Discord Notification
+#        if: always()
+#        env:
+#          STATUS_COLOR: ${{ job.status == 'success' && '3066993' || '15158332' }}
+#          STATUS_EMOJI: ${{ job.status == 'success' && '✅' || '❌' }}
+#        run: |
+#          curl -H "Content-Type: application/json" \
+#               -X POST \
+#               -d "{
+#                 \"embeds\": [{
+#                   \"title\": \"$STATUS_EMOJI infra-monitoring ELK Stack 배포 ${{ job.status }}\",
+#                   \"color\": $STATUS_COLOR,
+#                   \"fields\": [
+#                     {\"name\": \"서비스\", \"value\": \"ELK Stack (Elasticsearch, Logstash, Kibana, Filebeat)\", \"inline\": false},
+#                     {\"name\": \"브랜치\", \"value\": \"${{ github.ref_name }}\", \"inline\": true},
+#                     {\"name\": \"배포자\", \"value\": \"${{ github.actor }}\", \"inline\": true},
+#                     {\"name\": \"커밋\", \"value\": \"\`${GITHUB_SHA::8}\`\", \"inline\": false},
+#                     {\"name\": \"시간\", \"value\": \"$(TZ=Asia/Seoul date +'%Y-%m-%d %H:%M:%S KST')\", \"inline\": false}
+#                   ],
+#                   \"footer\": {
+#                     \"text\": \"AsyncSite CI/CD\"
+#                   },
+#                   \"timestamp\": \"$(date -u +%Y-%m-%dT%H:%M:%S.000Z)\"
+#                 }]
+#               }" \
+#               https://discord.com/api/webhooks/1399402822105038999/2qQDazifNKeW_c8MhHqcrw6Li5yDQtBL7f2JIBQ_b4qVT3Vxh7TfpMV3kBFnDYAFL3-h

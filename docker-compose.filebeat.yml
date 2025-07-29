@@ -11,6 +11,7 @@ services:
     user: root
     networks:
       - asyncsite-network
+    command: filebeat -e -strict.perms=false
 
 
 networks:
