@@ -58,7 +58,7 @@ jobs:
             # Clean up old indices to resolve field type conflicts
             echo "Cleaning up Elasticsearch indices..."
             docker exec elasticsearch curl -X DELETE "localhost:9200/filebeat-*" 2>/dev/null || true
-            docker exec elasticsearch curl -X DELETE "localhost:9200/asyncsite-*" 2>/dev/null || true
+            # NOTE: asyncsite-* indices are not deleted to preserve production data
             
             # Wait and verify Filebeat is running
             sleep 10
