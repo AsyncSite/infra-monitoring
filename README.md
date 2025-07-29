@@ -48,16 +48,12 @@ docker-compose -f docker-compose.server.yml up kibana-setup
 ## 로그 수집 방식
 
 ### 서버 환경 - Docker 컨테이너 로그 직접 수집
-```
-# Docker 컨테이너 로그 위치
-/var/lib/docker/containers/
-├── {container-id}/
-│   └── {container-id}-json.log
-└── ...
-
-# Filebeat가 Docker 메타데이터를 통해 자동으로 서비스 식별
-# asyncsite-* 컨테이너만 필터링하여 수집
-```
+- **Input Type**: `container` (Docker JSON 로그 자동 파싱)
+- **수집 경로**: `/var/lib/docker/containers/*/*.log`
+- **필터링**: `container.name`이 `asyncsite-`로 시작하는 컨테이너만 수집
+- **서비스 식별**: 
+  - Filebeat: Docker 메타데이터 추가
+  - Logstash: 컨테이너 이름에서 서비스명 추출 (예: `asyncsite-user-service` → `user-service`)
 
 ### 로컬 환경 - 파일 기반 로그 수집
 ```
@@ -68,6 +64,12 @@ docker-compose -f docker-compose.server.yml up kibana-setup
 │   └── application.log
 └── ...
 ```
+
+### 서비스별 인덱스 생성 흐름
+1. 컨테이너가 JSON 로그 생성
+2. Filebeat가 Docker 컨테이너 로그 수집 및 메타데이터 추가
+3. Logstash가 `container.name`에서 서비스명 추출
+4. Elasticsearch에 `asyncsite-{service}-{date}` 형태로 저장
 
 ## Kibana 사용법
 1. 브라우저에서 http://localhost:5601 접속
