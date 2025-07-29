@@ -41,31 +41,41 @@ jobs:
             echo "Starting ELK Stack..."
             docker compose -f docker-compose.yml up -d
             
+            # ELK 스택이 준비될 때까지 대기
+            echo "Waiting for ELK stack to be ready..."
+            sleep 30
+            
+            # ELK 스택 상태 확인
+            echo "Checking ELK stack status..."
+            docker ps | grep -E "(elasticsearch|logstash|kibana)" || echo "WARNING: ELK stack may not be running properly"
+            
             # 2. Filebeat 설정 파일 권한 변경
             echo "Setting permissions for filebeat-server.yml..."
             chmod 644 filebeat-server.yml
             
             # 3. Filebeat 에이전트 재시작 (설정 변경 적용)
             echo "Restarting Filebeat Agent to apply new configuration..."
-            # Stop ALL filebeat containers (including orphans)
-            echo "Stopping all Filebeat containers..."
-            docker ps -a | grep filebeat | awk '{print $1}' | xargs -r docker stop 2>/dev/null || true
-            docker ps -a | grep filebeat | awk '{print $1}' | xargs -r docker rm -v 2>/dev/null || true
+            # Stop ONLY filebeat containers
+            echo "Stopping Filebeat containers..."
+            docker stop asyncsite-filebeat-agent 2>/dev/null || true
+            docker rm -v asyncsite-filebeat-agent 2>/dev/null || true
             # Remove any lingering data directory that might have locks
             docker volume ls -q | grep filebeat | xargs -r docker volume rm 2>/dev/null || true
-            # Clean up orphan containers
-            docker compose -f docker-compose.filebeat.yml -f docker-compose.filebeat.server.yml down --remove-orphans
-            # Start fresh
-            docker compose -f docker-compose.filebeat.yml -f docker-compose.filebeat.server.yml up -d
+            # Start fresh with project name to avoid conflicts
+            docker compose -p filebeat -f docker-compose.filebeat.yml -f docker-compose.filebeat.server.yml up -d
             
             # Clean up old indices to resolve field type conflicts
             echo "Cleaning up Elasticsearch indices..."
-            # List and delete filebeat indices one by one (Elasticsearch may not allow wildcard deletion)
-            for index in $(docker exec elasticsearch curl -s "localhost:9200/_cat/indices" | grep "filebeat-" | awk '{print $3}'); do
-              echo "Deleting index: $index"
-              docker exec elasticsearch curl -X DELETE "localhost:9200/$index" 2>/dev/null || true
-            done
-            # NOTE: asyncsite-* indices are not deleted to preserve production data
+            if docker ps | grep -q "elasticsearch"; then
+              # List and delete filebeat indices one by one (Elasticsearch may not allow wildcard deletion)
+              for index in $(docker exec elasticsearch curl -s "localhost:9200/_cat/indices" 2>/dev/null | grep "filebeat-" | awk '{print $3}'); do
+                echo "Deleting index: $index"
+                docker exec elasticsearch curl -X DELETE "localhost:9200/$index" 2>/dev/null || true
+              done
+              # NOTE: asyncsite-* indices are not deleted to preserve production data
+            else
+              echo "WARNING: Elasticsearch not running, skipping index cleanup"
+            fi
             
             # Wait and verify Filebeat is running
             sleep 10
@@ -85,9 +95,13 @@ jobs:
             echo "Sending test log..."
             if docker ps | grep -q "asyncsite-user-service"; then
               docker exec asyncsite-user-service sh -c "echo '{\"timestamp\":\"$(date -u +%Y-%m-%dT%H:%M:%S.000Z)\",\"service\":\"user-service\",\"level\":\"INFO\",\"message\":\"CI/CD deployment test\"}' >&2"
-              sleep 15
+              sleep 20
               echo "Checking for asyncsite-user-service index..."
-              docker exec elasticsearch curl -s "localhost:9200/_cat/indices?v" | grep "asyncsite-user-service" || echo "Service-based index not yet created"
+              if docker ps | grep -q "elasticsearch"; then
+                docker exec elasticsearch curl -s "localhost:9200/_cat/indices?v" | grep "asyncsite-user-service" || echo "Service-based index not yet created"
+              else
+                echo "WARNING: Elasticsearch container not found"
+              fi
             fi
             
             # 4. 네트워크 생성 (없을 경우)

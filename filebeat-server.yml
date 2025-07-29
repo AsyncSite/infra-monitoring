@@ -18,9 +18,14 @@ filebeat.inputs:
               regexp:
                 container.name: "^asyncsite-"
 
+# Elasticsearch 직접 출력 비활성화
+output.elasticsearch:
+  enabled: false
+
 # Logstash로 출력
 output.logstash:
   hosts: ["logstash:5044"]
+  enabled: true
 
 # 로깅 설정
 logging.level: info
